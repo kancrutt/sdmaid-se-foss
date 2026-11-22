@@ -1,0 +1,92 @@
+name: Auto-Build FOSS APK (unlock fix)
+
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout fork (workflow + patch + last_built marker)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve latest upstream release tag
+        id: upstream
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG=$(gh api repos/d4rken-org/sdmaid-se/releases/latest --jq .tag_name)
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Latest upstream release: $TAG"
+
+      - name: Read last built marker
+        id: marker
+        run: |
+          LAST=$(cat last_built.txt 2>/dev/null || echo none)
+          echo "last=$LAST" >> "$GITHUB_OUTPUT"
+          echo "Last built: $LAST"
+
+      - name: Stop if already built
+        if: steps.marker.outputs.last == steps.upstream.outputs.tag
+        run: echo "No new release since $LAST — nothing to do."
+
+      - name: Setup Java
+        if: steps.marker.outputs.last != steps.upstream.outputs.tag
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Setup Gradle
+        if: steps.marker.outputs.last != steps.upstream.outputs.tag
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Generate debug keystore
+        if: steps.marker.outputs.last != steps.upstream.outputs.tag
+        run: |
+          mkdir -p ~/.android
+          keytool -genkey -v -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "C=US, O=Android, CN=Android Debug"
+
+      - name: Checkout upstream release + apply unlock fix
+        if: steps.marker.outputs.last != steps.upstream.outputs.tag
+        env:
+          TAG: ${{ steps.upstream.outputs.tag }}
+        run: |
+          git remote add upstream https://github.com/d4rken-org/sdmaid-se.git
+          git fetch upstream --tags
+          git worktree add -q /tmp/build "$TAG"
+          git -C /tmp/build apply "$GITHUB_WORKSPACE/patches/foss-unlock.patch"
+          echo "Patched $TAG with FOSS unlock fix."
+
+      - name: Build FOSS Release APK
+        if: steps.marker.outputs.last != steps.upstream.outputs.tag
+        working-directory: /tmp/build
+        run: ./gradlew assembleFossRelease --stacktrace
+
+      - name: Upload APK artifact (no public release)
+        if: steps.marker.outputs.last != steps.upstream.outputs.tag
+        uses: actions/upload-artifact@v4
+        with:
+          name: SDMaidSE-FOSS-${{ steps.upstream.outputs.tag }}
+          path: /tmp/build/app/build/outputs/apk/foss/release/*.apk
+          retention-days: 90
+
+      - name: Update last_built marker
+        if: steps.marker.outputs.last != steps.upstream.outputs.tag
+        env:
+          TAG: ${{ steps.upstream.outputs.tag }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          printf '%s\n' "$TAG" > last_built.txt
+          git add last_built.txt
+          git commit -m "chore: mark $TAG as built"
+          git push origin main

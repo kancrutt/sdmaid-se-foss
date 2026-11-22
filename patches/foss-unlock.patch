@@ -1,0 +1,23 @@
+diff --git a/app/src/foss/java/eu/darken/sdmse/common/upgrade/ui/UpgradeViewModel.kt b/app/src/foss/java/eu/darken/sdmse/common/upgrade/ui/UpgradeViewModel.kt
+index 1da3ddb..005b693 100644
+--- a/app/src/foss/java/eu/darken/sdmse/common/upgrade/ui/UpgradeViewModel.kt
++++ b/app/src/foss/java/eu/darken/sdmse/common/upgrade/ui/UpgradeViewModel.kt
+@@ -153,6 +153,9 @@ class UpgradeViewModel @Inject constructor(
+ 
+             if (elapsed < SPONSOR_DELAY_MS) {
+                 log(TAG) { "checkSponsorReturn(): Too quick, showing snackbar" }
++                if (!handle.contains(KEY_SPONSOR_PRESSED_AT)) {
++                    handle[KEY_SPONSOR_PRESSED_AT] = pressedAt
++                }
+                 snackbarEvents.tryEmit(R.string.upgrade_screen_sponsor_return_too_quick)
+             } else {
+                 log(TAG) { "checkSponsorReturn(): Delay passed, persisting upgrade" }
+@@ -182,7 +185,7 @@ class UpgradeViewModel @Inject constructor(
+     companion object {
+         private const val KEY_SPONSOR_PRESSED_AT = "sponsor_pressed_at"
+         private const val KEY_SHOW_UPGRADE_OPTIONS = "show_upgrade_options"
+-        private const val SPONSOR_DELAY_MS = 5_000L
++        private const val SPONSOR_DELAY_MS = 1_000L
+         private val TAG = logTag("Upgrade", "ViewModel")
+     }
+ }
